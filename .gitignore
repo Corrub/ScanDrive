@@ -1,0 +1,76 @@
+# Dependencies
+node_modules/
+/.pnp
+.pnp.js
+
+# Testing
+/coverage
+
+# Production
+/build
+/dist
+/dist-ssr
+
+# Tauri build outputs
+src-tauri/target/
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Rust
+**/*.rs.bk
+*.pdb
+
+# macOS
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Backup files
+*.backup
+*.bak
+*.tmp
+*.swp
+*~
+
+# Logs
+logs/
+*.log
+
+# Documentation files (internal dev notes)
+BACKEND_COMPLETE.md
+BACKEND_INTEGRATION_GUIDE.md
+DESKTOP_BUILD_GUIDE.md
+IMPLEMENTATION_SUMMARY.md
+THIS_IS_A_DESKTOP_APP.md
+UI_README.md
