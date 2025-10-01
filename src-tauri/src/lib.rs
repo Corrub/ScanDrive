@@ -112,9 +112,31 @@ fn get_drives() -> Result<Vec<Drive>, String> {
             0.0
         };
 
+        // Format drive name - make it more descriptive for Windows drives
+        let disk_name = disk.name().to_string_lossy().into_owned();
+        let mount_point = disk.mount_point().to_string_lossy().into_owned();
+        let display_name = if disk_name.is_empty() || disk_name.trim().is_empty() {
+            // For Windows drives like C:, D:, etc., create a better name
+            #[cfg(target_os = "windows")]
+            {
+                if mount_point.len() >= 2 && mount_point.chars().nth(1) == Some(':') {
+                    let drive_letter = mount_point.chars().next().unwrap();
+                    format!("Local Disk ({}:)", drive_letter)
+                } else {
+                    mount_point.clone()
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                mount_point.clone()
+            }
+        } else {
+            disk_name
+        };
+
         drives.push(Drive {
-            name: disk.name().to_string_lossy().into_owned(),
-            path: disk.mount_point().to_string_lossy().into_owned(),
+            name: display_name,
+            path: mount_point,
             total_space: format_bytes(total),
             used_space: format_bytes(used),
             free_space: format_bytes(actual_available),

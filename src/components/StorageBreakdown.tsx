@@ -26,7 +26,7 @@ export const StorageBreakdown: React.FC<StorageBreakdownProps> = ({
                 />
                 <span className="category-name">{category.name}</span>
               </div>
-              <span className="category-percentage">{category.percentage}%</span>
+              <span className="category-percentage">{category.percentage.toFixed(2)}%</span>
             </div>
             <div className="category-bar">
               <div

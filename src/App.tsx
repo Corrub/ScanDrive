@@ -21,8 +21,9 @@ import {
   Breadcrumb,
   BreadcrumbItem,
   Loading,
+  Theme,
 } from '@carbon/react';
-import { Settings, Renew, ArrowUp, Folder } from '@carbon/icons-react';
+import { Settings, Renew, ArrowUp, Folder, Asleep, Light } from '@carbon/icons-react';
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from '@tauri-apps/api/event';
 import { DriveCard } from './components/DriveCard';
@@ -60,6 +61,23 @@ function App() {
   const [selectedDrivePath, setSelectedDrivePath] = useState<string>('');
   const [currentPath, setCurrentPath] = useState<string>('');
   const [isLoadingContents, setIsLoadingContents] = useState(false);
+  
+  // Theme state
+  const [isDarkTheme, setIsDarkTheme] = useState(() => {
+    // Check system preference
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  // Listen for system theme changes
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = (e: MediaQueryListEvent) => {
+      setIsDarkTheme(e.matches);
+    };
+    
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
 
   const headers = [
     { key: 'name', header: 'Name' },
@@ -159,8 +177,9 @@ function App() {
   );
 
   return (
-    <div className="app-container">
-      <Header aria-label="ScanDrive">
+    <Theme theme={isDarkTheme ? 'g100' : 'white'}>
+      <div className="app-container">
+        <Header aria-label="ScanDrive">
         <HeaderName prefix="">
           ScanDrive
         </HeaderName>
@@ -171,6 +190,13 @@ function App() {
             onClick={handleRefreshDrives}
           >
             <Renew size={20} />
+          </HeaderGlobalAction>
+          <HeaderGlobalAction
+            aria-label={isDarkTheme ? "Switch to light theme" : "Switch to dark theme"}
+            tooltipAlignment="end"
+            onClick={() => setIsDarkTheme(!isDarkTheme)}
+          >
+            {isDarkTheme ? <Light size={20} /> : <Asleep size={20} />}
           </HeaderGlobalAction>
           <HeaderGlobalAction
             aria-label="Settings"
@@ -333,6 +359,7 @@ function App() {
         </Grid>
       </Content>
     </div>
+    </Theme>
   );
 }
 

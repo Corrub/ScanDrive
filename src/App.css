@@ -1,7 +1,33 @@
+/* Root and body styles for theme support */
+:root,
+body {
+  margin: 0;
+  padding: 0;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+body {
+  background-color: var(--cds-background);
+  color: var(--cds-text-primary);
+}
+
+/* Dark theme styles */
+[data-carbon-theme="g100"] {
+  --cds-background: #161616;
+  --cds-text-primary: #f4f4f4;
+}
+
+/* Light theme styles */
+[data-carbon-theme="white"] {
+  --cds-background: #ffffff;
+  --cds-text-primary: #161616;
+}
+
 /* App Container */
 .app-container {
   min-height: 100vh;
   background-color: var(--cds-background);
+  color: var(--cds-text-primary);
 }
 
 /* Fix table overflow */

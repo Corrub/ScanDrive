@@ -53,7 +53,7 @@ export const DriveCard: React.FC<DriveCardProps> = ({
           label="Storage Usage"
           value={usagePercentage}
           max={100}
-          helperText={`${usagePercentage}% used`}
+          helperText={`${usagePercentage.toFixed(2)}% used`}
         />
       </div>
     </Tile>
