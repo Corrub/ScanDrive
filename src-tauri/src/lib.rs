@@ -3,16 +3,19 @@ use std::fs;
 use std::path::Path;
 use sysinfo::Disks;
 use tauri::Emitter;
-use walkdir::WalkDir;
 
 // Data structures matching TypeScript interfaces
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Drive {
     name: String,
     path: String,
+    #[serde(rename = "totalSpace")]
     total_space: String,
+    #[serde(rename = "usedSpace")]
     used_space: String,
+    #[serde(rename = "freeSpace")]
     free_space: String,
+    #[serde(rename = "usagePercentage")]
     usage_percentage: f32,
 }
 
@@ -27,6 +30,8 @@ pub struct FileItem {
     path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_modified: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    children: Option<Vec<FileItem>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -65,7 +70,42 @@ fn get_drives() -> Result<Vec<Drive>, String> {
     for disk in disks.iter() {
         let total = disk.total_space();
         let available = disk.available_space();
-        let used = total - available;
+        
+        // On macOS, try to get more accurate usage information
+        // by using statvfs which includes purgeable space in calculations
+        #[cfg(target_os = "macos")]
+        let (used, actual_available) = {
+            use std::ffi::CString;
+            use std::mem::MaybeUninit;
+            
+            let path = disk.mount_point();
+            let path_c = CString::new(path.to_string_lossy().as_bytes()).unwrap();
+            
+            unsafe {
+                let mut stats = MaybeUninit::<libc::statvfs>::uninit();
+                if libc::statvfs(path_c.as_ptr(), stats.as_mut_ptr()) == 0 {
+                    let stats = stats.assume_init();
+                    let block_size = stats.f_frsize as u64;
+                    let total_blocks = stats.f_blocks as u64;
+                    let free_blocks = stats.f_bfree as u64; // Free blocks (including reserved)
+                    let available_blocks = stats.f_bavail as u64; // Available to non-root
+                    
+                    let total_bytes = total_blocks * block_size;
+                    let free_bytes = free_blocks * block_size;
+                    let used_bytes = total_bytes.saturating_sub(free_bytes);
+                    let available_bytes = available_blocks * block_size;
+                    
+                    (used_bytes, available_bytes)
+                } else {
+                    // Fallback to sysinfo calculation
+                    (total - available, available)
+                }
+            }
+        };
+        
+        #[cfg(not(target_os = "macos"))]
+        let (used, actual_available) = (total - available, available);
+        
         let usage_percentage = if total > 0 {
             (used as f64 / total as f64 * 100.0) as f32
         } else {
@@ -77,7 +117,7 @@ fn get_drives() -> Result<Vec<Drive>, String> {
             path: disk.mount_point().to_string_lossy().into_owned(),
             total_space: format_bytes(total),
             used_space: format_bytes(used),
-            free_space: format_bytes(available),
+            free_space: format_bytes(actual_available),
             usage_percentage,
         });
     }
@@ -85,7 +125,30 @@ fn get_drives() -> Result<Vec<Drive>, String> {
     Ok(drives)
 }
 
-// Scan a drive/directory recursively
+// Calculate directory size recursively (with depth limit for performance)
+fn calculate_dir_size(path: &Path, max_depth: usize, current_depth: usize) -> u64 {
+    if current_depth > max_depth {
+        return 0;
+    }
+    
+    let mut total_size = 0u64;
+    
+    if let Ok(entries) = fs::read_dir(path) {
+        for entry in entries.flatten() {
+            if let Ok(metadata) = entry.metadata() {
+                if metadata.is_dir() {
+                    total_size += calculate_dir_size(&entry.path(), max_depth, current_depth + 1);
+                } else {
+                    total_size += metadata.len();
+                }
+            }
+        }
+    }
+    
+    total_size
+}
+
+// Scan a drive and show root-level folders with their sizes (parallel processing)
 #[tauri::command]
 async fn scan_drive<R: tauri::Runtime>(
     window: tauri::Window<R>,
@@ -93,50 +156,75 @@ async fn scan_drive<R: tauri::Runtime>(
 ) -> Result<String, String> {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
+    use rayon::prelude::*;
 
     let counter = Arc::new(AtomicU64::new(0));
-    
-    // Clone window for the thread
     let window_clone = window.clone();
     
     std::thread::spawn(move || {
-        let walker = WalkDir::new(&path)
-            .follow_links(false)
-            .into_iter()
-            .filter_entry(|e| {
-                // Skip common protected directories on macOS
-                let path_str = e.path().to_string_lossy();
-                !path_str.contains("/.Spotlight-V100") &&
-                !path_str.contains("/.Trashes") &&
-                !path_str.contains("/.fseventsd")
-            });
-
-        for entry in walker {
-            match entry {
-                Ok(entry) => {
-                    let count = counter.fetch_add(1, Ordering::Relaxed);
-                    
-                    // Emit progress every 100 files
-                    if count % 100 == 0 {
-                        let _ = window_clone.emit("scan-progress", ScanProgress {
-                            current_path: entry.path().to_string_lossy().to_string(),
-                            files_scanned: count,
-                            progress: 0.0, // Can't determine total in advance
-                        });
-                    }
+        // Read all entries first
+        let entries: Vec<_> = if let Ok(entries) = fs::read_dir(&path) {
+            entries.flatten().collect()
+        } else {
+            Vec::new()
+        };
+        
+        // Process in parallel for speed
+        let root_items: Vec<FileItem> = entries
+            .par_iter()
+            .filter_map(|entry| {
+                let entry_path = entry.path();
+                let name = entry.file_name().to_string_lossy().to_string();
+                
+                // Skip hidden/system folders
+                if name.starts_with('.') {
+                    return None;
                 }
-                Err(e) => {
-                    // Silently skip permission denied errors
-                    if e.io_error().map_or(false, |err| err.kind() == std::io::ErrorKind::PermissionDenied) {
-                        continue;
-                    }
+                
+                // Emit progress periodically
+                let count = counter.fetch_add(1, Ordering::Relaxed);
+                if count % 5 == 0 {
+                    let _ = window_clone.emit("scan-progress", ScanProgress {
+                        current_path: entry_path.to_string_lossy().to_string(),
+                        files_scanned: count,
+                        progress: 0.0,
+                    });
                 }
-            }
-        }
-
-        // Emit final count
+                
+                let metadata = entry.metadata().ok()?;
+                
+                let (size_bytes, item_type) = if metadata.is_dir() {
+                    // Calculate directory size with limited depth for speed
+                    let size = calculate_dir_size(&entry_path, 5, 0);
+                    (size, "directory".to_string())
+                } else {
+                    (metadata.len(), entry_path.extension()
+                        .and_then(|ext| ext.to_str())
+                        .map(|ext| ext.to_lowercase())
+                        .unwrap_or_else(|| "file".to_string()))
+                };
+                
+                Some(FileItem {
+                    id: entry_path.to_string_lossy().to_string(),
+                    name,
+                    size: format_bytes(size_bytes),
+                    size_bytes,
+                    item_type,
+                    path: entry_path.to_string_lossy().to_string(),
+                    last_modified: None,
+                    children: None,
+                })
+            })
+            .collect();
+        
+        // Sort by size (largest first)
+        let mut sorted_items = root_items;
+        sorted_items.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
+        
+        let _ = window_clone.emit("scan-complete", sorted_items);
+        
         let final_count = counter.load(Ordering::Relaxed);
-        let _ = window_clone.emit("scan-complete", ScanProgress {
+        let _ = window_clone.emit("scan-progress", ScanProgress {
             current_path: "Complete".to_string(),
             files_scanned: final_count,
             progress: 100.0,
@@ -146,69 +234,66 @@ async fn scan_drive<R: tauri::Runtime>(
     Ok("Scan started".to_string())
 }
 
-// Get directory contents
+// Get directory contents with calculated sizes (async to prevent UI freeze)
 #[tauri::command]
-fn get_directory_contents(path: String) -> Result<Vec<FileItem>, String> {
+async fn get_directory_contents(path: String) -> Result<Vec<FileItem>, String> {
+    use rayon::prelude::*;
+    
     let dir_path = Path::new(&path);
     
     if !dir_path.exists() {
         return Err("Directory does not exist".to_string());
     }
 
-    let mut items = Vec::new();
-    
-    match fs::read_dir(dir_path) {
-        Ok(entries) => {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let metadata = match entry.metadata() {
-                    Ok(m) => m,
-                    Err(_) => continue, // Skip if we can't read metadata
-                };
-
-                let size_bytes = metadata.len();
-                let item_type = if metadata.is_dir() {
-                    "directory".to_string()
-                } else {
-                    path.extension()
-                        .and_then(|ext| ext.to_str())
-                        .map(|ext| ext.to_lowercase())
-                        .unwrap_or_else(|| "file".to_string())
-                };
-
-                let last_modified = metadata.modified()
-                    .ok()
-                    .and_then(|time| {
-                        let datetime: chrono::DateTime<chrono::Local> = time.into();
-                        Some(datetime.format("%Y-%m-%d %H:%M:%S").to_string())
-                    });
-
-                items.push(FileItem {
-                    id: path.to_string_lossy().to_string(),
-                    name: entry.file_name().to_string_lossy().to_string(),
-                    size: format_bytes(size_bytes),
-                    size_bytes,
-                    item_type,
-                    path: path.to_string_lossy().to_string(),
-                    last_modified,
-                });
-            }
-        }
+    // Read directory entries first (fast)
+    let entries: Vec<_> = match fs::read_dir(dir_path) {
+        Ok(entries) => entries.flatten().collect(),
         Err(e) => return Err(format!("Failed to read directory: {}", e)),
-    }
+    };
 
-    // Sort: directories first, then by name
-    items.sort_by(|a, b| {
-        if a.item_type == "directory" && b.item_type != "directory" {
-            std::cmp::Ordering::Less
-        } else if a.item_type != "directory" && b.item_type == "directory" {
-            std::cmp::Ordering::Greater
-        } else {
-            a.name.cmp(&b.name)
-        }
-    });
+    // Process entries in parallel using rayon
+    let items: Vec<FileItem> = entries
+        .par_iter()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            
+            // Skip hidden files
+            if name.starts_with('.') {
+                return None;
+            }
+            
+            let metadata = entry.metadata().ok()?;
 
-    Ok(items)
+            let (size_bytes, item_type) = if metadata.is_dir() {
+                // Calculate directory size with limited depth (3 levels)
+                let size = calculate_dir_size(&path, 3, 0);
+                (size, "directory".to_string())
+            } else {
+                (metadata.len(), path.extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext.to_lowercase())
+                    .unwrap_or_else(|| "file".to_string()))
+            };
+
+            Some(FileItem {
+                id: path.to_string_lossy().to_string(),
+                name,
+                size: format_bytes(size_bytes),
+                size_bytes,
+                item_type,
+                path: path.to_string_lossy().to_string(),
+                last_modified: None,
+                children: None,
+            })
+        })
+        .collect();
+
+    // Sort by size (largest first)
+    let mut sorted_items = items;
+    sorted_items.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
+
+    Ok(sorted_items)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

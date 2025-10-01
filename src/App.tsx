@@ -17,8 +17,12 @@ import {
   TableContainer,
   Toggle,
   Search,
+  Button,
+  Breadcrumb,
+  BreadcrumbItem,
+  Loading,
 } from '@carbon/react';
-import { Settings, Renew } from '@carbon/icons-react';
+import { Settings, Renew, ArrowUp, Folder } from '@carbon/icons-react';
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from '@tauri-apps/api/event';
 import { DriveCard } from './components/DriveCard';
@@ -54,6 +58,8 @@ function App() {
   // File data from directory listing
   const [fileData, setFileData] = useState<FileItem[]>([]);
   const [selectedDrivePath, setSelectedDrivePath] = useState<string>('');
+  const [currentPath, setCurrentPath] = useState<string>('');
+  const [isLoadingContents, setIsLoadingContents] = useState(false);
 
   const headers = [
     { key: 'name', header: 'Name' },
@@ -78,10 +84,7 @@ function App() {
     try {
       const drivesData = await invoke<Drive[]>('get_drives');
       setDrives(drivesData);
-      // Select first drive by default
-      if (drivesData.length > 0) {
-        setSelectedDrivePath(drivesData[0].path);
-      }
+      // Don't auto-select first drive to avoid loading large directory immediately
     } catch (error) {
       console.error('Failed to load drives:', error);
     }
@@ -89,11 +92,23 @@ function App() {
 
   const loadDirectoryContents = async (path: string) => {
     try {
+      console.log('Loading directory contents for:', path);
+      setIsLoadingContents(true);
+      setCurrentPath(path);
       const contents = await invoke<FileItem[]>('get_directory_contents', { path });
+      console.log('Loaded', contents.length, 'items:', contents.slice(0, 3));
       setFileData(contents);
     } catch (error) {
       console.error('Failed to load directory contents:', error);
+    } finally {
+      setIsLoadingContents(false);
     }
+  };
+  
+  const navigateUp = () => {
+    if (!currentPath || currentPath === selectedDrivePath) return;
+    const parentPath = currentPath.split('/').slice(0, -1).join('/') || '/';
+    loadDirectoryContents(parentPath);
   };
 
   const handleScan = async (drivePath: string) => {
@@ -101,6 +116,8 @@ function App() {
     setCurrentScanPath(drivePath);
     setScanProgress(0);
     setFilesScanned(0);
+    setSelectedDrivePath(drivePath);
+    setFileData([]); // Clear previous results
 
     // Listen for progress updates
     const unlistenProgress = await listen<{current_path: string, files_scanned: number, progress: number}>('scan-progress', (event) => {
@@ -109,15 +126,13 @@ function App() {
       setScanProgress(event.payload.progress);
     });
 
-    // Listen for scan completion
-    const unlistenComplete = await listen<{current_path: string, files_scanned: number, progress: number}>('scan-complete', (event) => {
-      console.log('Scan completed:', event.payload);
-      setCurrentScanPath(event.payload.current_path);
-      setFilesScanned(event.payload.files_scanned);
-      setScanProgress(event.payload.progress);
+    // Listen for scan completion with results
+    const unlistenComplete = await listen<FileItem[]>('scan-complete', (event) => {
+      console.log('Scan completed with', event.payload.length, 'files');
       setIsScanning(false);
-      // Reload directory contents after scan
-      loadDirectoryContents(drivePath);
+      setScanProgress(100);
+      // Display the scan results (top largest files)
+      setFileData(event.payload);
       // Clean up listeners
       unlistenProgress();
       unlistenComplete();
@@ -213,7 +228,26 @@ function App() {
           <Column lg={16} md={8} sm={4}>
             <div className="analysis-section">
               <div className="analysis-header">
-                <h3>File System Analysis</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                  <h3>File System Analysis</h3>
+                  {currentPath && (
+                    <>
+                      <Button
+                        kind="ghost"
+                        size="sm"
+                        renderIcon={ArrowUp}
+                        onClick={navigateUp}
+                        disabled={!currentPath || currentPath === selectedDrivePath}
+                      >
+                        Up
+                      </Button>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <Folder size={16} />
+                        <code>{currentPath}</code>
+                      </span>
+                    </>
+                  )}
+                </div>
                 <div className="analysis-controls">
                   <Toggle
                     id="hidden-files-toggle"
@@ -234,20 +268,27 @@ function App() {
                 </div>
               </div>
 
-              <DataTable rows={filteredFiles} headers={headers}>
-                {({
-                  rows,
-                  headers,
-                  getHeaderProps,
-                  getRowProps,
-                  getTableProps,
-                  getTableContainerProps,
-                }) => (
-                  <TableContainer
-                    title="Files and Folders"
-                    description="Click on a folder to explore its contents"
-                    {...getTableContainerProps()}
-                  >
+              {isLoadingContents && (
+                <div style={{ padding: '3rem', textAlign: 'center' }}>
+                  <Loading description="Calculating folder sizes..." withOverlay={false} />
+                </div>
+              )}
+              
+              {!isLoadingContents && (
+                <DataTable rows={filteredFiles} headers={headers}>
+                  {({
+                    rows,
+                    headers,
+                    getHeaderProps,
+                    getRowProps,
+                    getTableProps,
+                    getTableContainerProps,
+                  }) => (
+                    <TableContainer
+                      title="Files and Folders"
+                      description="Click on a folder to explore its contents (sorted by size)"
+                      {...getTableContainerProps()}
+                    >
                     <Table {...getTableProps()} aria-label="file system table">
                       <TableHead>
                         <TableRow>
@@ -261,18 +302,32 @@ function App() {
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {rows.map((row) => (
-                          <TableRow {...getRowProps({ row })}>
-                            {row.cells.map((cell) => (
-                              <TableCell key={cell.id}>{cell.value}</TableCell>
-                            ))}
-                          </TableRow>
-                        ))}
+                        {rows.map((row) => {
+                          const fileItem = filteredFiles.find(f => f.id === row.id);
+                          const isDirectory = fileItem?.type === 'directory';
+                          
+                          return (
+                            <TableRow 
+                              {...getRowProps({ row })}
+                              style={{ cursor: isDirectory ? 'pointer' : 'default' }}
+                              onClick={() => {
+                                if (isDirectory && fileItem) {
+                                  loadDirectoryContents(fileItem.path);
+                                }
+                              }}
+                            >
+                              {row.cells.map((cell) => (
+                                <TableCell key={cell.id}>{cell.value}</TableCell>
+                              ))}
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </TableContainer>
                 )}
               </DataTable>
+              )}
             </div>
           </Column>
         </Grid>

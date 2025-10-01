@@ -4,6 +4,45 @@
   background-color: var(--cds-background);
 }
 
+/* Fix table overflow */
+.cds--data-table-container {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.cds--data-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.cds--data-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Make path column wider */
+.cds--data-table th:nth-child(4),
+.cds--data-table td:nth-child(4) {
+  width: 40%;
+}
+
+/* Fixed widths for other columns */
+.cds--data-table th:nth-child(1),
+.cds--data-table td:nth-child(1) {
+  width: 30%;
+}
+
+.cds--data-table th:nth-child(2),
+.cds--data-table td:nth-child(2) {
+  width: 15%;
+}
+
+.cds--data-table th:nth-child(3),
+.cds--data-table td:nth-child(3) {
+  width: 15%;
+}
+
 /* Page Header */
 .page-header {
   margin-bottom: 2rem;
