@@ -4,10 +4,102 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tauri + React + Typescript</title>
+    <title>ScanDrive</title>
+    <style>
+      /* Prevent white flash on startup */
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #161616;
+        color: #f4f4f4;
+        overflow: hidden;
+      }
+      #root {
+        min-height: 100vh;
+        background-color: #161616;
+      }
+      
+      /* Loading screen */
+      #loading-screen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: #161616;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        transition: opacity 0.3s ease-out;
+      }
+      
+      #loading-screen.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      
+      .loading-icon {
+        width: 80px;
+        height: 80px;
+        margin-bottom: 2rem;
+        animation: pulse 2s ease-in-out infinite;
+      }
+      
+      .loading-icon svg {
+        width: 100%;
+        height: 100%;
+        fill: #0f62fe;
+      }
+      
+      .loading-text {
+        font-size: 1.25rem;
+        font-weight: 400;
+        color: #f4f4f4;
+        margin-bottom: 0.5rem;
+      }
+      
+      .loading-subtext {
+        font-size: 0.875rem;
+        color: #8d8d8d;
+      }
+      
+      .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid #393939;
+        border-top-color: #0f62fe;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-top: 1.5rem;
+      }
+      
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.05); opacity: 0.8; }
+      }
+      
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
   </head>
 
   <body>
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+      <div class="loading-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+          <path d="M16 2C8.3 2 2 8.3 2 16s6.3 14 14 14 14-6.3 14-14S23.7 2 16 2zm0 2c6.6 0 12 5.4 12 12s-5.4 12-12 12S4 22.6 4 16 9.4 4 16 4zm0 3c-5 0-9 4-9 9s4 9 9 9 9-4 9-9-4-9-9-9zm0 2c3.9 0 7 3.1 7 7s-3.1 7-7 7-7-3.1-7-7 3.1-7 7-7z"/>
+          <circle cx="16" cy="16" r="3"/>
+        </svg>
+      </div>
+      <div class="loading-text">ScanDrive</div>
+      <div class="loading-subtext">Initializing disk analyzer...</div>
+      <div class="loading-spinner"></div>
+    </div>
+    
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

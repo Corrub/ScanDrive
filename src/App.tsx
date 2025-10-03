@@ -27,6 +27,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from '@tauri-apps/api/event';
 import { DriveCard } from './components/DriveCard';
 import { ScanProgress } from './components/ScanProgress';
+import { FolderPieChart } from './components/FolderPieChart';
+import { FileItem } from './types';
 import './App.css';
 
 interface Drive {
@@ -36,14 +38,6 @@ interface Drive {
   usedSpace: string;
   freeSpace: string;
   usagePercentage: number;
-}
-
-interface FileItem {
-  id: string;
-  name: string;
-  size: string;
-  type: string;
-  path: string;
 }
 
 function App() {
@@ -396,10 +390,10 @@ function App() {
           </Column>
 
           {/* Drive Cards Section */}
-          <Column lg={16} md={8} sm={4}>
+          <Column lg={10} md={8} sm={4}>
             <div className="drives-section">
               <h3>Available Drives</h3>
-              <div className="drives-grid">
+              <div className="drives-list">
                 {drives.map((drive) => (
                   <DriveCard
                     key={drive.path}
@@ -414,6 +408,16 @@ function App() {
                   />
                 ))}
               </div>
+            </div>
+          </Column>
+
+          {/* Pie Chart Section */}
+          <Column lg={6} md={8} sm={4}>
+            <div style={{ position: 'sticky', top: '4rem' }}>
+              <FolderPieChart 
+                fileData={fileData}
+                currentPath={currentPath}
+              />
             </div>
           </Column>
 
