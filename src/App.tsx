@@ -389,8 +389,9 @@ function App() {
             </div>
           </Column>
 
-          {/* Drive Cards Section */}
+          {/* Left Column - Drives and File Table */}
           <Column lg={10} md={8} sm={4}>
+            {/* Drive Cards Section */}
             <div className="drives-section">
               <h3>Available Drives</h3>
               <div className="drives-list">
@@ -409,33 +410,9 @@ function App() {
                 ))}
               </div>
             </div>
-          </Column>
 
-          {/* Pie Chart Section */}
-          <Column lg={6} md={8} sm={4}>
-            <div style={{ position: 'sticky', top: '4rem' }}>
-              <FolderPieChart 
-                fileData={fileData}
-                currentPath={currentPath}
-              />
-            </div>
-          </Column>
-
-          {/* Scan Progress Section */}
-          {isScanning && (
-            <Column lg={16} md={8} sm={4}>
-              <ScanProgress
-                isScanning={isScanning}
-                currentPath={currentScanPath}
-                filesScanned={filesScanned}
-                progress={scanProgress}
-              />
-            </Column>
-          )}
-
-          {/* File Analysis Section */}
-          <Column lg={16} md={8} sm={4}>
-            <div className="analysis-section">
+            {/* File Analysis Section */}
+            <div className="analysis-section" style={{ marginTop: '2rem' }}>
               <div className="analysis-header">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
                   <h3>File System Analysis</h3>
@@ -609,6 +586,24 @@ function App() {
               </DataTable>
               )}
             </div>
+          </Column>
+
+          {/* Right Column - Scan Progress and Pie Chart */}
+          <Column lg={6} md={8} sm={4}>
+            {isScanning ? (
+              <ScanProgress
+                isScanning={isScanning}
+                currentPath={currentScanPath}
+                filesScanned={filesScanned}
+                progress={scanProgress}
+              />
+            ) : (
+              <FolderPieChart 
+                fileData={fileData}
+                currentPath={currentPath}
+                selectedItems={selectedItems}
+              />
+            )}
           </Column>
         </Grid>
       </Content>

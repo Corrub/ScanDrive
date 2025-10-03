@@ -4,6 +4,7 @@ import { FileItem } from '../types';
 interface FolderPieChartProps {
   fileData: FileItem[];
   currentPath: string;
+  selectedItems?: Set<string>;
 }
 
 interface PieSlice {
@@ -16,19 +17,19 @@ interface PieSlice {
 }
 
 const COLORS = [
-  '#0f62fe', // Blue 60 (primary)
+  '#0f62fe', // Blue 60 (primary) - darkest for largest
   '#4589ff', // Blue 50
   '#78a9ff', // Blue 40
-  '#a6c8ff', // Blue 30
-  '#d0e2ff', // Blue 20
-  '#0043ce', // Blue 70
-  '#002d9c', // Blue 80
-  '#001d6c', // Blue 90
-  '#001141', // Blue 100
   '#8ab4ff', // Blue 35
+  '#a6c8ff', // Blue 30
+  '#d0e2ff', // Blue 20 - lightest
+  '#e0e9ff', // Very light blue
+  '#c6dcff', // Light blue
+  '#b8d4ff', // Lighter blue
+  '#aaccff', // Lightest blue
 ];
 
-export function FolderPieChart({ fileData, currentPath }: FolderPieChartProps) {
+export function FolderPieChart({ fileData, currentPath, selectedItems = new Set() }: FolderPieChartProps) {
   const [hoveredSlice, setHoveredSlice] = useState<number | null>(null);
 
   // Parse size string to bytes for calculations
@@ -54,8 +55,12 @@ export function FolderPieChart({ fileData, currentPath }: FolderPieChartProps) {
   const calculateSlices = (): PieSlice[] => {
     if (fileData.length === 0) return [];
 
+    // Filter out selected items to show preview after deletion
+    const filteredData = fileData.filter(item => !selectedItems.has(item.id));
+    if (filteredData.length === 0) return [];
+
     // Get top items and group others
-    const itemsWithBytes = fileData.map(item => ({
+    const itemsWithBytes = filteredData.map(item => ({
       ...item,
       bytes: parseSizeToBytes(item.size),
     })).sort((a, b) => b.bytes - a.bytes);
@@ -123,9 +128,23 @@ export function FolderPieChart({ fileData, currentPath }: FolderPieChartProps) {
     startAngle: number,
     endAngle: number
   ): string => {
+    const angleDiff = endAngle - startAngle;
+    
+    // For a full circle (or very close to 360°), draw it as two semicircles
+    if (angleDiff >= 359.9) {
+      const top = polarToCartesian(centerX, centerY, radius, -90);
+      const bottom = polarToCartesian(centerX, centerY, radius, 90);
+      return [
+        'M', top.x, top.y,
+        'A', radius, radius, 0, 0, 1, bottom.x, bottom.y,
+        'A', radius, radius, 0, 0, 1, top.x, top.y,
+        'Z'
+      ].join(' ');
+    }
+    
     const start = polarToCartesian(centerX, centerY, radius, endAngle);
     const end = polarToCartesian(centerX, centerY, radius, startAngle);
-    const largeArcFlag = endAngle - startAngle <= 180 ? '0' : '1';
+    const largeArcFlag = angleDiff <= 180 ? '0' : '1';
 
     return [
       'M', centerX, centerY,

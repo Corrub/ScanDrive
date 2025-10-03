@@ -191,6 +191,8 @@ async fn scan_drive<R: tauri::Runtime>(
             Vec::new()
         };
         
+        let total_entries = entries.len() as f32;
+        
         // Process in parallel for speed
         let root_items: Vec<FileItem> = entries
             .par_iter()
@@ -201,10 +203,15 @@ async fn scan_drive<R: tauri::Runtime>(
                 // Emit progress periodically
                 let count = counter.fetch_add(1, Ordering::Relaxed);
                 if count % 5 == 0 {
+                    let progress = if total_entries > 0.0 {
+                        (count as f32 / total_entries * 100.0).min(99.0)
+                    } else {
+                        0.0
+                    };
                     let _ = window_clone.emit("scan-progress", ScanProgress {
                         current_path: entry_path.to_string_lossy().to_string(),
                         files_scanned: count,
-                        progress: 0.0,
+                        progress,
                     });
                 }
                 
