@@ -26,6 +26,7 @@ walkdir = "2"
 sysinfo = "0.30"
 chrono = "0.4"
 rayon = "1.8"
+trash = "5.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"

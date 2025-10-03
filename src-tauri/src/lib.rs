@@ -198,11 +198,6 @@ async fn scan_drive<R: tauri::Runtime>(
                 let entry_path = entry.path();
                 let name = entry.file_name().to_string_lossy().to_string();
                 
-                // Skip hidden/system folders
-                if name.starts_with('.') {
-                    return None;
-                }
-                
                 // Emit progress periodically
                 let count = counter.fetch_add(1, Ordering::Relaxed);
                 if count % 5 == 0 {
@@ -225,6 +220,12 @@ async fn scan_drive<R: tauri::Runtime>(
                         .map(|ext| ext.to_lowercase())
                         .unwrap_or_else(|| "file".to_string()))
                 };
+                
+                // Only include files/folders >= 500MB (500 * 1024 * 1024 bytes)
+                const MIN_SIZE_BYTES: u64 = 500 * 1024 * 1024;
+                if size_bytes < MIN_SIZE_BYTES {
+                    return None;
+                }
                 
                 Some(FileItem {
                     id: entry_path.to_string_lossy().to_string(),
@@ -280,11 +281,6 @@ async fn get_directory_contents(path: String) -> Result<Vec<FileItem>, String> {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().to_string();
             
-            // Skip hidden files
-            if name.starts_with('.') {
-                return None;
-            }
-            
             let metadata = entry.metadata().ok()?;
 
             let (size_bytes, item_type) = if metadata.is_dir() {
@@ -297,6 +293,12 @@ async fn get_directory_contents(path: String) -> Result<Vec<FileItem>, String> {
                     .map(|ext| ext.to_lowercase())
                     .unwrap_or_else(|| "file".to_string()))
             };
+
+            // Only include files/folders >= 500MB (500 * 1024 * 1024 bytes)
+            const MIN_SIZE_BYTES: u64 = 500 * 1024 * 1024;
+            if size_bytes < MIN_SIZE_BYTES {
+                return None;
+            }
 
             Some(FileItem {
                 id: path.to_string_lossy().to_string(),
@@ -318,6 +320,64 @@ async fn get_directory_contents(path: String) -> Result<Vec<FileItem>, String> {
     Ok(sorted_items)
 }
 
+// Delete a file or directory
+#[tauri::command]
+async fn delete_file_or_directory(path: String) -> Result<String, String> {
+    use std::fs;
+    
+    let file_path = Path::new(&path);
+    
+    if !file_path.exists() {
+        return Err("File or directory does not exist".to_string());
+    }
+    
+    // Get file info before deletion for confirmation
+    let metadata = fs::metadata(&file_path)
+        .map_err(|e| format!("Failed to read file metadata: {}", e))?;
+    
+    let result = if metadata.is_dir() {
+        // Delete directory and all its contents
+        fs::remove_dir_all(&file_path)
+            .map_err(|e| format!("Failed to delete directory: {}", e))
+    } else {
+        // Delete file
+        fs::remove_file(&file_path)
+            .map_err(|e| format!("Failed to delete file: {}", e))
+    };
+    
+    match result {
+        Ok(_) => {
+            let item_type = if metadata.is_dir() { "directory" } else { "file" };
+            Ok(format!("Successfully deleted {} '{}'", item_type, path))
+        }
+        Err(e) => Err(e)
+    }
+}
+
+// Move a file or directory to trash
+#[tauri::command]
+async fn move_to_trash(path: String) -> Result<String, String> {
+    use std::fs;
+    
+    let file_path = Path::new(&path);
+    
+    if !file_path.exists() {
+        return Err("File or directory does not exist".to_string());
+    }
+    
+    // Get file info before moving to trash
+    let metadata = fs::metadata(&file_path)
+        .map_err(|e| format!("Failed to read file metadata: {}", e))?;
+    
+    let item_type = if metadata.is_dir() { "directory" } else { "file" };
+    
+    // Move to trash using the trash crate
+    trash::delete(&file_path)
+        .map_err(|e| format!("Failed to move {} to trash: {}", item_type, e))?;
+    
+    Ok(format!("Successfully moved {} '{}' to trash", item_type, path))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -326,6 +386,8 @@ pub fn run() {
             get_drives,
             scan_drive,
             get_directory_contents,
+            delete_file_or_directory,
+            move_to_trash,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
